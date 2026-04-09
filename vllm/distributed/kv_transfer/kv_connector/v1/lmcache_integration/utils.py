@@ -119,10 +119,7 @@ def create_lmcache_metadata(
     """
     # Third Party
     # First Party
-    try:
-        from lmcache.config import LMCacheEngineMetadata
-    except ImportError:
-        from lmcache.v1.metadata import LMCacheMetadata as LMCacheEngineMetadata
+    from lmcache.config import LMCacheEngineMetadata
 
     from vllm.utils.torch_utils import get_kv_cache_torch_dtype
 
@@ -156,19 +153,14 @@ def create_lmcache_metadata(
     kv_shape = (num_layer, 1 if use_mla else 2, chunk_size, num_kv_head, head_size)
 
     # Create metadata
-    import torch
-
-    num_gpus = torch.accelerator.device_count()
-    local_rank = parallel_cfg.rank % num_gpus
     metadata = LMCacheEngineMetadata(
-        model_name=model_cfg.model,
-        world_size=parallel_cfg.world_size,
-        local_world_size=parallel_cfg.world_size,
-        worker_id=parallel_cfg.rank,
-        local_worker_id=local_rank,
-        kv_dtype=kv_dtype,
-        kv_shape=kv_shape,
-        use_mla=use_mla,
+        model_cfg.model,
+        parallel_cfg.world_size,
+        parallel_cfg.rank,
+        "vllm",
+        kv_dtype,
+        kv_shape,
+        use_mla,
     )
 
     return metadata, config
