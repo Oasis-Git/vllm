@@ -29,13 +29,22 @@ try:
         LMCacheMPWorkerAdapter,
         LoadStoreOp,
     )
-    from lmcache.v1.multiprocess.custom_types import RequestAllocationRecord
+
+    try:
+        from lmcache.v1.multiprocess.custom_types import RequestAllocationRecord
+    except ImportError:
+        from lmcache.v1.multiprocess.custom_types import (
+            BlockAllocationRecord as RequestAllocationRecord,
+        )
 except ImportError:
+    from lmcache.v1.multiprocess.custom_types import (
+        BlockAllocationRecord as RequestAllocationRecord,
+    )
+
     from vllm.distributed.kv_transfer.kv_connector.v1.lmcache_integration import (
         LMCacheMPSchedulerAdapter,
         LMCacheMPWorkerAdapter,
         LoadStoreOp,
-        RequestAllocationRecord,
     )
 
 if TYPE_CHECKING:
@@ -1023,42 +1032,42 @@ class LMCacheMPConnector(KVConnectorBase_V1):
         """
         records: list[RequestAllocationRecord] = []
 
-        # New requests: full allocation is the delta
+        # New requests: send all tokens covering all allocated blocks so
+        # the L0 metrics subscriber can correctly map each block to its
+        # actual token content (not just the newly-scheduled slice).
         for new_request in scheduler_output.scheduled_new_reqs:
             tracker = self.request_trackers.get(new_request.req_id)
             if tracker is None:
                 continue
-            num_new_tokens = scheduler_output.num_scheduled_tokens[new_request.req_id]
+            num_blocks = len(tracker.allocated_block_ids)
+            total_tokens = num_blocks * self.vllm_block_size
             records.append(
                 RequestAllocationRecord(
                     req_id=new_request.req_id,
                     new_block_ids=list(tracker.allocated_block_ids),
-                    new_token_ids=list(tracker.all_token_ids[:num_new_tokens]),
+                    new_token_ids=list(tracker.all_token_ids[:total_tokens]),
                 )
             )
 
-        # Cached requests: only the newly added blocks and tokens
+        # Cached requests: only the newly added blocks and their full
+        # token content.  We send all tokens covered by the new blocks
+        # (not just the tokens scheduled this step) so the L0 subscriber
+        # can correctly identify block content.
         cached_reqs = scheduler_output.scheduled_cached_reqs
         for idx, request_id in enumerate(cached_reqs.req_ids):
             new_block_ids = reformat_block_ids(cached_reqs.new_block_ids[idx])
-            num_new_tokens = scheduler_output.num_scheduled_tokens.get(request_id, 0)
-            if not new_block_ids and num_new_tokens == 0:
+            if not new_block_ids:
                 continue
             tracker = self.request_trackers.get(request_id)
             if tracker is None:
                 continue
-            # Slice the tokens scheduled this step: they end at the
-            # total-computed position and span num_new_tokens back.
-            total_computed = cached_reqs.num_computed_tokens[idx]
-            new_token_ids = (
-                list(
-                    tracker.all_token_ids[
-                        total_computed - num_new_tokens : total_computed
-                    ]
-                )
-                if num_new_tokens > 0
-                else []
-            )
+            # The new blocks sit at the end of the request's block list.
+            # Compute the token range they cover.
+            total_blocks = len(tracker.allocated_block_ids)
+            num_new_blocks = len(new_block_ids)
+            start_token = (total_blocks - num_new_blocks) * self.vllm_block_size
+            end_token = total_blocks * self.vllm_block_size
+            new_token_ids = list(tracker.all_token_ids[start_token:end_token])
             records.append(
                 RequestAllocationRecord(
                     req_id=request_id,
