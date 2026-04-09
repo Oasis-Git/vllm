@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from lmcache import utils
+
 try:
     from lmcache.config import LMCacheEngineMetadata
 except ImportError:
@@ -19,9 +20,11 @@ from lmcache.utils import _lmcache_nvtx_annotate
 from lmcache.v1.cache_engine import LMCacheEngine, LMCacheEngineBuilder
 from lmcache.v1.compute.blend import LMCBlenderBuilder
 from lmcache.v1.config import LMCacheEngineConfig
+
 try:
     from lmcache.v1.config import _validate_and_set_config_value
 except ImportError:
+
     def _validate_and_set_config_value(config, key, value):
         """Compat shim: set a config attribute by dotted key."""
         parts = key.split(".")
@@ -35,6 +38,8 @@ except ImportError:
             return True
         except Exception:
             return False
+
+
 from lmcache.v1.gpu_connector.gpu_connectors import (
     VLLMBufferLayerwiseGPUConnector,
     VLLMPagedMemGPUConnectorV2,

@@ -157,6 +157,7 @@ def create_lmcache_metadata(
 
     # Create metadata
     import torch
+
     num_gpus = torch.accelerator.device_count()
     local_rank = parallel_cfg.rank % num_gpus
     metadata = LMCacheEngineMetadata(
