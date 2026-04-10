@@ -9,14 +9,38 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from lmcache import utils
-from lmcache.config import LMCacheEngineMetadata
+
+try:
+    from lmcache.config import LMCacheEngineMetadata
+except ImportError:
+    from lmcache.v1.metadata import LMCacheMetadata as LMCacheEngineMetadata
 from lmcache.logging import init_logger
 from lmcache.observability import LMCStatsMonitor
 from lmcache.utils import _lmcache_nvtx_annotate
 from lmcache.v1.cache_engine import LMCacheEngine, LMCacheEngineBuilder
 from lmcache.v1.compute.blend import LMCBlenderBuilder
-from lmcache.v1.config import LMCacheEngineConfig, _validate_and_set_config_value
-from lmcache.v1.gpu_connector import (
+from lmcache.v1.config import LMCacheEngineConfig
+
+try:
+    from lmcache.v1.config import _validate_and_set_config_value
+except ImportError:
+
+    def _validate_and_set_config_value(config, key, value):
+        """Compat shim: set a config attribute by dotted key."""
+        parts = key.split(".")
+        obj = config
+        for part in parts[:-1]:
+            obj = getattr(obj, part, None)
+            if obj is None:
+                return False
+        try:
+            setattr(obj, parts[-1], value)
+            return True
+        except Exception:
+            return False
+
+
+from lmcache.v1.gpu_connector.gpu_connectors import (
     VLLMBufferLayerwiseGPUConnector,
     VLLMPagedMemGPUConnectorV2,
     VLLMPagedMemLayerwiseGPUConnector,
@@ -488,13 +512,14 @@ def _init_lmcache_engine(
     torch.accelerator.set_device_index(local_rank)
     device = torch.device(f"cuda:{local_rank}")
     metadata = LMCacheEngineMetadata(
-        model_config.model,
-        parallel_config.world_size,
-        parallel_config.rank,
-        "vllm",
-        kv_dtype,
-        kv_shape,
-        use_mla,
+        model_name=model_config.model,
+        world_size=parallel_config.world_size,
+        local_world_size=parallel_config.world_size,
+        worker_id=parallel_config.rank,
+        local_worker_id=local_rank,
+        kv_dtype=kv_dtype,
+        kv_shape=kv_shape,
+        use_mla=use_mla,
     )
 
     use_gpu = need_gpu_interim_buffer(lmcache_config)
