@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import enum
 import inspect
+import os
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -1077,7 +1078,9 @@ class LMCacheMPConnector(KVConnectorBase_V1):
             )
 
         if records:
-            self.scheduler_adapter.report_block_allocations(records)
+            self.scheduler_adapter.report_block_allocations(
+                os.getpid(), records
+            )
 
     def _get_request_tracker(self, request_id: str) -> LMCacheMPRequestTracker:
         assert request_id in self.request_trackers, (
